@@ -23,6 +23,28 @@ async function run() {
     // Connect the client to the server (optional starting in v4.7)
     await client.connect();
 
+    const databaseCollection = client.db("users").collection("user");
+
+    app.post("/adduser", async (req, res) => {
+      try {
+        const user = req.body;
+        const result = await databaseCollection.insertOne(user);
+        res.status(201).send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to add user" });
+      }
+    });
+
+    app.get("/allusers", async (req, res) => {
+      try {
+        const cursor = databaseCollection.find();
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to pull all users" });
+      }
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
@@ -33,16 +55,6 @@ async function run() {
   }
 }
 run().catch(console.dir);
-
-app.post("/adduser", async (req, res) => {
-  try {
-    const user = req.body;
-    const result = await db.collection("users").insertOne(user);
-    res.status(201).send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to add user" });
-  }
-});
 
 app.get("/", (req, res) => {
   res.send("Yesss...");
