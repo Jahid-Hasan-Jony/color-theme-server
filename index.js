@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
 const port = process.env.PORT || 3000;
@@ -45,6 +45,48 @@ async function run() {
       }
     });
 
+    app.put("/userUpdate", async (req, res) => {
+      try {
+        const { _id, ...updateFields } = req.body; // Destructure _id separately
+        if (!_id) return res.status(400).json({ error: "Missing user ID" });
+
+        const query = { _id: new ObjectId(_id) }; // Convert to ObjectId
+        const updateDoc = { $set: updateFields }; // Use $set for partial updates
+
+        const result = await databaseCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        res.json({ message: "User updated successfully", result });
+      } catch (error) {
+        console.error("Error updating user:", error);
+        res.status(500).json({ error: "Failed to update user info" });
+      }
+    });
+
+    // Delete a user
+    app.delete("/deleteuser", async (req, res) => {
+      try {
+        const { _id } = req.body;
+
+        if (!_id) return res.status(400).send({ error: "Missing user ID" });
+
+        const query = { _id: new ObjectId(_id) };
+        const result = await databaseCollection.deleteOne(query);
+
+        if (result.deletedCount === 1) {
+          res.send({ message: "User deleted successfully" });
+        } else {
+          res.status(404).send({ error: "User not found" });
+        }
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "Failed to delete user" });
+      }
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
@@ -57,7 +99,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("Yesss..");
+  res.send("Yesss...");
 });
 
 app.listen(port, () => {
