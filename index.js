@@ -2,12 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const cloudinary = require("./cloudinary/cloudinary");
+const upload = require("./multer/multer");
 
 const port = process.env.PORT || 3000;
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spmab.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -24,14 +27,80 @@ async function run() {
     await client.connect();
 
     const databaseCollection = client.db("users").collection("user");
+    const databaseCollectionGallery = client
+      .db("gallery")
+      .collection("galleries");
 
-    app.post("/adduser", async (req, res) => {
+    app.post("/adduser", upload.single("file"), async (req, res) => {
       try {
-        const user = req.body;
-        const result = await databaseCollection.insertOne(user);
-        res.status(201).send(result);
+        if (!req.file) {
+          return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        // Cloudinary Upload (Promise-based)
+        const result = await new Promise((resolve, reject) => {
+          cloudinary.uploader
+            .upload_stream({ resource_type: "auto" }, (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            })
+            .end(req.file.buffer);
+        });
+
+        // MongoDB Insert
+        const imageUrl = result.secure_url;
+
+        const publicId = imageUrl.split("/").pop().split(".")[0];
+
+        const user = { ...req.body, imageUrl: imageUrl, publicId: publicId };
+
+        const dbResult = await databaseCollection.insertOne(user);
+
+        console.log(user);
+        res
+          .status(201)
+          .json({ message: "User added successfully", user, dbResult });
       } catch (error) {
-        res.status(500).send({ error: "Failed to add user" });
+        console.error("Error adding user:", error);
+        res.status(500).json({ error: "Failed to add user" });
+      }
+    });
+
+    app.post("/gallery", upload.array("files", 5), async (req, res) => {
+      try {
+        if (!req.files || req.files.length === 0) {
+          return res.status(400).json({ error: "No files uploaded" });
+        }
+
+        let uploadedImages = [];
+
+        // Upload all images to Cloudinary
+        for (const file of req.files) {
+          const result = await new Promise((resolve, reject) => {
+            cloudinary.uploader
+              .upload_stream({ resource_type: "auto" }, (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              })
+              .end(file.buffer);
+          });
+
+          uploadedImages.push({
+            url: result.secure_url,
+            publicId: result.public_id,
+          });
+        }
+        const dbResult = await databaseCollectionGallery.insertOne(
+          uploadedImages
+        );
+
+        res.status(201).json({
+          message: "Images uploaded successfully",
+          images: uploadedImages,
+        });
+      } catch (error) {
+        console.error("Error uploading images:", error);
+        res.status(500).json({ error: "Failed to upload images" });
       }
     });
 
@@ -69,9 +138,11 @@ async function run() {
     // Delete a user
     app.delete("/deleteuser", async (req, res) => {
       try {
-        const { _id } = req.body;
+        const { _id, publicId } = req.body;
 
         if (!_id) return res.status(400).send({ error: "Missing user ID" });
+
+        await cloudinary.uploader.destroy(publicId);
 
         const query = { _id: new ObjectId(_id) };
         const result = await databaseCollection.deleteOne(query);
@@ -86,6 +157,20 @@ async function run() {
         res.status(500).send({ error: "Failed to delete user" });
       }
     });
+
+    // app.post("/upload", upload.single("file"), async (req, res) => {
+    //   try {
+    //     const result = await cloudinary.uploader.upload(req.file.path, {
+    //       resource_type: "auto",
+    //     });
+
+    //     fs.unlinkSync(req.file.path); // লোকাল থেকে ফাইল মুছে ফেলবে
+
+    //     res.json({ url: result.secure_url });
+    //   } catch (error) {
+    //     res.status(500).json({ error: "Upload failed!" });
+    //   }
+    // });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
