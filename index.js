@@ -27,9 +27,7 @@ async function run() {
     await client.connect();
 
     const databaseCollection = client.db("users").collection("user");
-    const databaseCollectionGallery = client
-      .db("gallery")
-      .collection("galleries");
+    const dbCollectionGallery = client.db("gallery").collection("galleries");
 
     app.post("/adduser", upload.single("file"), async (req, res) => {
       try {
@@ -55,8 +53,6 @@ async function run() {
         const user = { ...req.body, imageUrl: imageUrl, publicId: publicId };
 
         const dbResult = await databaseCollection.insertOne(user);
-
-        console.log(user);
         res
           .status(201)
           .json({ message: "User added successfully", user, dbResult });
@@ -90,9 +86,14 @@ async function run() {
             publicId: result.public_id,
           });
         }
-        const dbResult = await databaseCollectionGallery.insertOne(
-          uploadedImages
-        );
+
+        // ✅ Store all images inside a single MongoDB document
+        const galleryEntry = {
+          uploadedAt: new Date(),
+          images: uploadedImages, // Storing images as an array inside an object
+        };
+
+        const dbResult = await dbCollectionGallery.insertOne(galleryEntry);
 
         res.status(201).json({
           message: "Images uploaded successfully",
